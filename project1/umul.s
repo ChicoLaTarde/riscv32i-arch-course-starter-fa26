@@ -1,4 +1,4 @@
-## Author: Your Name
+## Author: David Uk
 ##
 ## You may implement the following with any of the instructions in the RV32I instruction set
 ## and described in the reference sheet. Do not use any of the mul[h][s][u] instructions which
@@ -16,10 +16,38 @@
 ##
 ## [Returns]
 ## a0 = 32-bit product
-    .text
+        .text
     .globl umul
 umul:
-    # This dummy code adds the two operands and returns the result.
-    # Replace with your implementation.
-    add  a0, a0, a1
+    # t0 = running product
+    # t1 = current multiplicand
+    # t2 = current multiplier
+    # t3 = least significant bit of multiplier
+
+    addi t0, zero, 0
+    addi t1, a0, 0
+    addi t2, a1, 0
+
+loop:
+    # If multiplier is zero, multiplication is finished
+    beq  t2, zero, done
+
+    # Check lowest bit of multiplier
+    andi t3, t2, 1
+    beq  t3, zero, skip_add
+
+    # Add current multiplicand when bit is 1
+    add  t0, t0, t1
+
+skip_add:
+    # Move to next binary position
+    slli t1, t1, 1
+    srli t2, t2, 1
+
+    # Unconditional branch
+    beq  zero, zero, loop
+
+done:
+    # Return product in a0
+    addi a0, t0, 0
     jalr zero, 0(ra)

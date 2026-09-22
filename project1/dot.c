@@ -8,6 +8,11 @@ extern uint32_t umul(const uint32_t x, const uint32_t y);
 // same length (len items).
 uint32_t dot(const uint32_t *const A, const uint32_t *const B, const size_t len)
 {
-    // Replace with your implementation of dot product.
-    return 0;
+    uint32_t result = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        result += umul(A[i], B[i]);
+    }
+
+    return result;
 }
