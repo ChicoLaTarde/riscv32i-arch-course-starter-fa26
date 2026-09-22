@@ -29,6 +29,9 @@ module rf #(
     // Register read port 2, with input address [0, 31] and output data.
     input  wire [ 4:0] i_rs2_raddr,
     output wire [31:0] o_rs2_rdata,
+
+
+
     // The register write port is synchronous. When write is enabled, the
     // write data is visible after the next clock edge.
     //
@@ -37,7 +40,77 @@ module rf #(
     input  wire [ 4:0] i_rd_waddr,
     input  wire [31:0] i_rd_wdata
 );
-    // TODO: Fill in your implementation here.
+// The register 
+wire [31:0] registers [31:0]; // 32 registers of 32 bits each
+
+
+// Synchronous write logic
+always @(posedge i_clk) begin
+    if (i_rst) begin
+        registers[0]  <= 32'b0;
+        registers[1]  <= 32'b0;
+        registers[2]  <= 32'b0;
+        registers[3]  <= 32'b0;
+        registers[4]  <= 32'b0;
+        registers[5]  <= 32'b0;
+        registers[6]  <= 32'b0;
+        registers[7]  <= 32'b0;
+        registers[8]  <= 32'b0;
+        registers[9]  <= 32'b0;
+        registers[10] <= 32'b0;
+        registers[11] <= 32'b0;
+        registers[12] <= 32'b0;
+        registers[13] <= 32'b0;
+        registers[14] <= 32'b0;
+        registers[15] <= 32'b0;
+        registers[16] <= 32'b0;
+        registers[17] <= 32'b0;
+        registers[18] <= 32'b0;
+        registers[19] <= 32'b0;
+        registers[20] <= 32'b0;
+        registers[21] <= 32'b0;
+        registers[22] <= 32'b0;
+        registers[23] <= 32'b0;
+        registers[24] <= 32'b0;
+        registers[25] <= 32'b0;
+        registers[26] <= 32'b0;
+        registers[27] <= 32'b0;
+        registers[28] <= 32'b0;
+        registers[29] <= 32'b0;
+        registers[30] <= 32'b0;
+        registers[31] <= 32'b0;
+    end
+    else if (i_rd_wen && (i_rd_waddr != 5'b0)) begin
+        registers[i_rd_waddr] <= i_rd_wdata;
+    end
+end
+
+// Asynchronous read logic
+generate
+    if (BYPASS_EN) begin
+        // Bypass logic: if the read address matches the write address
+        // and write enableis high, forward the write data
+        assign o_rs1_rdata =
+            (i_rs1_raddr == 5'b0) ? 32'b0 :
+            (i_rs1_raddr == i_rd_waddr && i_rd_wen &&
+             i_rd_waddr != 5'b0) ? i_rd_wdata :
+            registers[i_rs1_raddr]
+        assign o_rs2_rdata =
+            (i_rs2_raddr == 5'b0) ? 32'b0 :
+            (i_rs2_raddr == i_rd_waddr && i_rd_wen &&
+             i_rd_waddr != 5'b0) ? i_rd_wdata :
+            registers[i_rs2_raddr];
+    end else begin
+        // Normal asynchronous read logic
+        assign o_rs1_rdata =
+            (i_rs1_raddr == 5'b0) ? 32'b0 :
+            registers[i_rs1_raddr];
+        assign o_rs2_rdata =
+            (i_rs2_raddr == 5'b0) ? 32'b0 :
+            registers[i_rs2_raddr];
+    end
+endgenerate
+
 endmodule
 
 `default_nettype wire
