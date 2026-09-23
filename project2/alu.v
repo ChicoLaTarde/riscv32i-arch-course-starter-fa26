@@ -60,13 +60,72 @@ module alu (
     // ===============================================================
     // SHIFT LOGIC
     // ===============================================================
+
+    // ---------------------------------------------------------------
+    // LEFT BARREL SHIFTER
+    // ---------------------------------------------------------------
+
+    wire [31:0] sll_1;
+    wire [31:0] sll_2;
+    wire [31:0] sll_4;
+    wire [31:0] sll_8;
+    wire [31:0] sll_result;
+
+    assign sll_1 = i_op2[0] ? (i_op1 << 1)  : i_op1;
+    assign sll_2 = i_op2[1] ? (sll_1 << 2)  : sll_1;
+    assign sll_4 = i_op2[2] ? (sll_2 << 4)  : sll_2;
+    assign sll_8 = i_op2[3] ? (sll_4 << 8)  : sll_4;
+    assign sll_result =
+        i_op2[4] ? (sll_8 << 16) : sll_8;
+
+
+    // ---------------------------------------------------------------
+    // LOGICAL RIGHT BARREL SHIFTER
+    // ---------------------------------------------------------------
+
+    wire [31:0] srl_1;
+    wire [31:0] srl_2;
+    wire [31:0] srl_4;
+    wire [31:0] srl_8;
     wire [31:0] srl_result;
+
+    assign srl_1 = i_op2[0] ? (i_op1 >> 1)  : i_op1;
+    assign srl_2 = i_op2[1] ? (srl_1 >> 2)  : srl_1;
+    assign srl_4 = i_op2[2] ? (srl_2 >> 4)  : srl_2;
+    assign srl_8 = i_op2[3] ? (srl_4 >> 8)  : srl_4;
+    assign srl_result =
+        i_op2[4] ? (srl_8 >> 16) : srl_8;
+
+
+    // ---------------------------------------------------------------
+    // ARITHMETIC RIGHT BARREL SHIFTER
+    // ---------------------------------------------------------------
+
+    wire [31:0] sra_1;
+    wire [31:0] sra_2;
+    wire [31:0] sra_4;
+    wire [31:0] sra_8;
     wire [31:0] sra_result;
 
-    assign srl_result = i_op1 >> i_op2[4:0];
-    assign sra_result = i_op1[31]
-                      ? ~((~i_op1) >> i_op2[4:0])
-                      :  (i_op1 >> i_op2[4:0]);
+    assign sra_1 = i_op2[0]
+                 ? {i_op1[31], i_op1[31:1]}
+                 : i_op1;
+
+    assign sra_2 = i_op2[1]
+                 ? {{2{sra_1[31]}}, sra_1[31:2]}
+                 : sra_1;
+
+    assign sra_4 = i_op2[2]
+                 ? {{4{sra_2[31]}}, sra_2[31:4]}
+                 : sra_2;
+
+    assign sra_8 = i_op2[3]
+                 ? {{8{sra_4[31]}}, sra_4[31:8]}
+                 : sra_4;
+
+    assign sra_result = i_op2[4]
+                      ? {{16{sra_8[31]}}, sra_8[31:16]}
+                      : sra_8;
     // ===============================================================
     // COMPARISON LOGIC
     // ===============================================================
@@ -87,7 +146,7 @@ module alu (
     // ALU RESULT
     // ===============================================================
     assign o_result = (i_opsel == 3'b000) ? add_result
-                    : (i_opsel == 3'b001) ? (i_op1 << i_op2[4:0])
+                    : (i_opsel == 3'b001) ? sll_result
                     : ((i_opsel == 3'b010) ||
                        (i_opsel == 3'b011)) ? {31'b0, o_slt}
                     : (i_opsel == 3'b100) ? (i_op1 ^ i_op2)
