@@ -53,6 +53,15 @@ module alu (
         .o_result(add_result),
         .o_cout()
     );
+
+    // ===============================================================
+    // SHIFT LOGIC
+    // ===============================================================
+    wire [31:0] srl_result;
+    wire [31:0] sra_result;
+
+    assign srl_result = i_op1 >> i_op2[4:0];
+    assign sra_result = $signed(i_op1) >>> i_op2[4:0];
     // ===============================================================
     // COMPARISON LOGIC
     // ===============================================================
@@ -69,9 +78,7 @@ module alu (
                         ? {31'b0, o_slt}
                     : (i_opsel == 3'b100) ? (i_op1 ^ i_op2)
                     : (i_opsel == 3'b101)
-                        ? (i_arith
-                            ? ($signed(i_op1) >>> i_op2[4:0])
-                            : (i_op1 >> i_op2[4:0]))
+                        ? (i_arith ? sra_result : srl_result)
                     : (i_opsel == 3'b110) ? (i_op1 | i_op2)
                     : (i_opsel == 3'b111) ? (i_op1 & i_op2)
                     : 32'b0;
