@@ -347,7 +347,7 @@ module alu_tb;
             32'hAAAA_5555,
             32'hAAAA_0000,
             0,
-            1
+            0
         );
 
 

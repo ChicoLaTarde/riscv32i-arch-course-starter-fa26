@@ -41,7 +41,7 @@ module rf #(
     input  wire [31:0] i_rd_wdata
 );
 // The register 
-wire [31:0] registers [31:0]; // 32 registers of 32 bits each
+reg [31:0] registers [31:0]; // 32 registers of 32 bits each
 
 
 // Synchronous write logic
@@ -94,7 +94,7 @@ generate
             (i_rs1_raddr == 5'b0) ? 32'b0 :
             (i_rs1_raddr == i_rd_waddr && i_rd_wen &&
              i_rd_waddr != 5'b0) ? i_rd_wdata :
-            registers[i_rs1_raddr]
+            registers[i_rs1_raddr];
         assign o_rs2_rdata =
             (i_rs2_raddr == 5'b0) ? 32'b0 :
             (i_rs2_raddr == i_rd_waddr && i_rd_wen &&

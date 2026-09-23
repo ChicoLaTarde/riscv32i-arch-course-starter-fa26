@@ -45,6 +45,7 @@ module alu (
     output wire        o_slt
 );
     // TODO: Fill in your implementation here.
+    wire [31:0] add_result;
 
     kogge_stone_32 adder (
         .i_a(i_op1),
