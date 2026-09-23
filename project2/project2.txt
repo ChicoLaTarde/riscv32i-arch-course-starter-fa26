@@ -1,0 +1,35 @@
+[Q0] If the wrong immediate encoding is selected, the immediate decoder will output the wrong value,
+which can cause the processor to perform an incorrect operation or calculate an incorrect address.
+R-type instructions do not use an immediate because both operands come from registers. Therefore,
+the immediate output for an R-type instruction is a don’t-care value and should not be used by the processor.
+[Q1] B-type and J-type immediates have imm[0] hardcoded to zero because branch and jump targets are aligned to at least 2-byte boundaries.
+Since the lowest bit is always zero, there is no reason to store it in the instruction.
+Removing the hardcoded zero would waste one instruction bit to represent information that is always known,
+or would reduce the useful range of the immediate if the same number of immediate bits were retained.
+[Q2] The immediate encodings were designed to simplify hardware while allowing different instruction formats to share important bit positions.
+In particular, the sign bit for immediates is consistently placed at instruction bit 31, which simplifies sign extension.
+RISC-V also keeps register fields such as rs1, rs2, and rd in consistent positions across instruction formats. Because those fields remain fixed, 
+immediate bits sometimes have to be rearranged around them. B- and J-type immediates also take advantage of instruction alignment by not storing imm[0], 
+allowing the available bits to represent a larger branch or jump range.
+[Q3] A write to x0 should be ignored. In RISC-V, x0 is hardwired to zero, so reading x0 must always return 0x00000000 regardless of any previous attempted writes to it.
+[Q4] The program counter is not included in the register file because it has a different purpose and update behavior from the general-purpose registers.
+The PC stores the address of the current/next instruction and normally changes automatically as instructions execute. 
+It is therefore implemented as separate processor state rather than one of the 32 general-purpose integer registers.
+[Q5] To change the number of registers, the depth of the register file and the width of its read/write addresses would need to change. 
+For example, 32 registers require 5-bit addresses because 2^5=32. Increasing to 64 registers would require 6-bit addresses. However, 
+this would also require changing the ISA instruction encoding because RV32I allocates only 5 bits each for rd, rs1, and rs2. 
+Supporting more registers would therefore require a modified instruction format/ISA, 
+not just a larger hardware register file.
+[Q6] The register file, immediate decoder, and ALU will form major parts of the processor datapath. The register file provides source operands and stores results, 
+the immediate decoder generates immediate operands from instructions, and the ALU performs arithmetic, logical, comparison, and shift operations. 
+A complete RV32I processor will also need a program counter, instruction memory, data memory interface, instruction decoder/control logic, 
+multiplexers for selecting operands and write-back data, and logic for branches and jumps.
+[Q7] A hardware multiply instruction could be implemented by creating a hardware multiplier and connecting it to the processor datapath, 
+similar to how the ALU performs addition and other arithmetic operations. 
+The instruction decoder would need to recognize a multiplication instruction and select the multiplier’s result for write-back to rd. The ISA also needs an encoding that identifies the operation. 
+In standard RISC-V, integer multiplication is provided by the M extension, so supporting the standard MUL instruction would mean implementing its defined encoding and behavior rather than creating a new custom encoding.
+[Q8] Yes, a 32-bit processor can perform operations on 16-bit values. The registers can remain 32 bits wide, with the instruction operating only on selected lower or upper 16 bits. 
+The ALU could select operand[15:0] or operand[31:16], perform a 16-bit operation, and then define how the result is written back, such as sign-extending, 
+zero-extending, or preserving the other half. The immediate decoder may need additional logic if the new instructions contain 16-bit immediates. 
+The register file itself would not necessarily need to change because it can continue storing 32-bit words. 
+The instruction decoder/control logic and ISA encoding would need to identify the new 16-bit operations and control the ALU appropriately.

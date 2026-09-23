@@ -44,9 +44,11 @@ module alu (
     // should be taken.
     output wire        o_slt
 );
-    // TODO: Fill in your implementation here.
     wire [31:0] add_result;
 
+    // ===============================================================
+    // ADD / SUB LOGIC
+    // ===============================================================
     kogge_stone_32 adder (
         .i_a(i_op1),
         .i_b(i_op2),
@@ -62,24 +64,35 @@ module alu (
     wire [31:0] sra_result;
 
     assign srl_result = i_op1 >> i_op2[4:0];
-    assign sra_result = $signed(i_op1) >>> i_op2[4:0];
+    assign sra_result = i_op1[31]
+                      ? ~((~i_op1) >> i_op2[4:0])
+                      :  (i_op1 >> i_op2[4:0]);
     // ===============================================================
     // COMPARISON LOGIC
     // ===============================================================
+    wire unsigned_less;
+    wire signed_less;
     assign o_eq = (i_op1 == i_op2);
+    // Normal unsigned comparison
+    assign unsigned_less = (i_op1 < i_op2);
+    // Signed comparison is a bit more complicated. If the signs are different, then
+    // the negative number is less than the positive number. 
+    assign signed_less = (i_op1[31] != i_op2[31])
+                       ? i_op1[31]
+                       : unsigned_less;
     assign o_slt = i_unsigned
-                 ? (i_op1 < i_op2)
-                 : ($signed(i_op1) < $signed(i_op2));
+                 ? unsigned_less
+                 : signed_less;
     // ===============================================================
     // ALU RESULT
     // ===============================================================
     assign o_result = (i_opsel == 3'b000) ? add_result
                     : (i_opsel == 3'b001) ? (i_op1 << i_op2[4:0])
-                    : (i_opsel == 3'b010 || i_opsel == 3'b011)
-                        ? {31'b0, o_slt}
+                    : ((i_opsel == 3'b010) ||
+                       (i_opsel == 3'b011)) ? {31'b0, o_slt}
                     : (i_opsel == 3'b100) ? (i_op1 ^ i_op2)
-                    : (i_opsel == 3'b101)
-                        ? (i_arith ? sra_result : srl_result)
+                    : (i_opsel == 3'b101) ?
+                        (i_arith ? sra_result : srl_result)
                     : (i_opsel == 3'b110) ? (i_op1 | i_op2)
                     : (i_opsel == 3'b111) ? (i_op1 & i_op2)
                     : 32'b0;
