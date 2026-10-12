@@ -533,7 +533,6 @@ module hart #(
         .o_is_jal      (is_jal),
         .o_is_jalr     (is_jalr),
         .o_illegal     (illegal_inst)
-        .o_illegal     (illegal_inst)
     );
 
     // ============================================================
