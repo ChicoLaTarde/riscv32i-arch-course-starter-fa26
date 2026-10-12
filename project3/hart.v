@@ -510,6 +510,8 @@ module hart #(
     // Decoder
     // ============================================================
 
+    wire illegal_inst;
+
     decoder decoder_unit (
         .i_inst        (inst),
 
@@ -529,7 +531,8 @@ module hart #(
 
         .o_is_branch   (is_branch),
         .o_is_jal      (is_jal),
-        .o_is_jalr     (is_jalr)
+        .o_is_jalr     (is_jalr),
+        .o_illegal     (illegal_inst)
         .o_illegal     (illegal_inst)
     );
 
@@ -600,16 +603,9 @@ module hart #(
     assign inst_misaligned =
         (pc_next[1:0] != 2'b00);
 
-    /*
-     * This currently covers alignment traps.
-     *
-     * Add decoder illegal-instruction output here once your decoder
-     * implements illegal instruction detection:
-     *
-     *     illegal_inst |
-     *
-     */
+    // Report unsupported instructions and alignment faults.
     assign o_retire_trap =
+        illegal_inst    |
         load_misaligned  |
         store_misaligned |
         inst_misaligned;
