@@ -19,7 +19,6 @@ module PC_reg #(
             o_pc <= RESET_ADDR;
         else
             o_pc <= i_next_pc;
-            o_pc <= i_next_pc;
     end
 
 endmodule
