@@ -2,11 +2,11 @@
 * adder.v (takes in two 32-bit inputs and outputs their sum)
 */
 
-module adder (
-    input wire [31:0] a,
-    input wire [31:0] b,
-    output wire [31:0] c;
+module adder_32b (
+    input  wire [31:0] i_a,
+    input  wire [31:0] i_b,
+    output wire [31:0] o_sum
 );
 
-    c = a + b;
+    assign o_sum = i_a + i_b;
 endmodule
