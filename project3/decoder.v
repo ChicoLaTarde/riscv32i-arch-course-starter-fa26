@@ -15,7 +15,7 @@ module decoder (
     // Raw 32-bit instruction from instruction memory. opcode, funct3,
     // funct7, and (for SYSTEM) the remaining instruction bits determine
     // which operation is legal and how the datapath should be configured.
-    input  reg [31:0] i_inst,
+    input      [31:0] i_inst,
 
     // ALU operation selector. For R-type and arithmetic I-type operations,
     // use funct3: 000=ADD/SUB, 001=SLL, 010=SLT, 011=SLTU,
@@ -124,6 +124,8 @@ module decoder (
         o_wb_sel    = WB_ALU;
         o_i_format  = 6'b000000;
         o_reg_wen   = 1'b0;
+        o_mem_ren   = 1'b0;
+        o_mem_wen   = 1'b0;
         o_is_branch = 1'b0;
         o_is_jal    = 1'b0;
         o_is_jalr   = 1'b0;
@@ -153,11 +155,13 @@ module decoder (
                 o_op2_sel  = OP2_IMM;
                 o_wb_sel   = WB_LOAD;
                 o_reg_wen  = 1'b1;
+                o_mem_ren  = 1'b1;
             end
 
             7'b0100011: begin // Store: address = rs1 + immediate
                 o_i_format = FORMAT_S;
                 o_op2_sel  = OP2_IMM;
+                o_mem_wen  = 1'b1;
             end
 
             7'b1100011: begin // Branch: compare registers

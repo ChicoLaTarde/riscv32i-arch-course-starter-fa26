@@ -420,30 +420,15 @@ module hart #(
     // Constant shifts only.
     // ============================================================
 
-    wire [31:0] store_byte_data;
-    wire [31:0] store_half_data;
-
-    assign store_byte_data =
-        (byte_offset == 2'b00)
-            ? {24'b0, rs2_rdata[7:0]} :
-        (byte_offset == 2'b01)
-            ? {16'b0, rs2_rdata[7:0], 8'b0} :
-        (byte_offset == 2'b10)
-            ? {8'b0, rs2_rdata[7:0], 16'b0} :
-              {rs2_rdata[7:0], 24'b0};
-
-    assign store_half_data =
-        (byte_offset == 2'b00)
-            ? {16'b0, rs2_rdata[15:0]} :
-        (byte_offset == 2'b10)
-            ? {rs2_rdata[15:0], 16'b0} :
-              32'b0;
-
+    // Only the mask-selected byte lanes are ever written downstream, so
+    // the unselected lanes need not be zeroed -- a plain shift leaves
+    // whatever bits land there, matching the expected bus value.
     assign o_dmem_wdata =
-        (funct3 == 3'b000) ? store_byte_data :
-        (funct3 == 3'b001) ? store_half_data :
         (funct3 == 3'b010) ? rs2_rdata :
-                             32'b0;
+        (byte_offset == 2'b00) ? rs2_rdata :
+        (byte_offset == 2'b01) ? (rs2_rdata << 8)  :
+        (byte_offset == 2'b10) ? (rs2_rdata << 16) :
+                                  (rs2_rdata << 24);
 
     // ============================================================
     // LOAD DATA ALIGNMENT
@@ -528,6 +513,9 @@ module hart #(
         .o_i_format    (imm_format),  // one hot encoding of the immediate format
 
         .o_reg_wen     (reg_wen),
+
+        .o_mem_ren     (mem_ren),
+        .o_mem_wen     (mem_wen),
 
         .o_is_branch   (is_branch),
         .o_is_jal      (is_jal),
