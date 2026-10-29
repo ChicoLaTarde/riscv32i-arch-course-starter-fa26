@@ -1,10 +1,6 @@
 `default_nettype none
 
-// The arithmetic logic unit (ALU) is responsible for performing the core
-// calculations of the processor. It takes two 32-bit operands and outputs
-// a 32 bit result based on the selection operation - addition, comparison,
-// shift, or logical operation. This ALU is a purely combinational block, so
-// you should not attempt to add any registers or pipeline it.
+// 32-bit ALU.
 module alu (
     // NOTE: Both 3'b010 and 3'b011 are used for set less than operations and
     // your implementation should output the same result for both codes. The
@@ -19,31 +15,41 @@ module alu (
     // 3'b101: shift right logical/arithmetic if `i_arith` asserted
     // 3'b110: or
     // 3'b111: and
-    input  wire [ 2:0] i_opsel,
+    input wire [ 2:0] i_opsel,
     // When asserted, addition operations should subtract instead.
     // This is only used for `i_opsel == 3'b000` (addition/subtraction).
-    input  wire        i_sub,
+    input wire i_sub,
     // When asserted, comparison operations should be treated as unsigned.
     // This is used for branch comparisons and set less than unsigned. For
     // b ranch operations, the ALU result is not used, only the comparison
     // results.
-    input  wire        i_unsigned,
+    input wire i_unsigned,
     // When asserted, right shifts should be treated as arithmetic instead of
     // logical. This is only used for `i_opsel == 3'b101` (shift right).
-    input  wire        i_arith,
+    input wire i_arith,
     // First 32-bit input operand.
-    input  wire [31:0] i_op1,
+    input wire [31:0] i_op1,
     // Second 32-bit input operand.
-    input  wire [31:0] i_op2,
+    input wire [31:0] i_op2,
     // 32-bit output result. Any carry out should be ignored.
     output wire [31:0] o_result,
     // Equality result. This is used externally to determine if a branch
     // should be taken.
-    output wire        o_eq,
+    output wire o_eq,
     // Set less than result. This is used externally to determine if a branch
     // should be taken.
-    output wire        o_slt
+    output wire o_slt
 );
+    // ALU operation codes. Subtract, signed comparison, and shift mode use separate controls.
+    localparam [2:0] ALU_ADD_SUB = 3'b000;
+    localparam [2:0] ALU_SLL = 3'b001;
+    localparam [2:0] ALU_SLT = 3'b010;
+    localparam [2:0] ALU_SLTU = 3'b011;
+    localparam [2:0] ALU_XOR = 3'b100;
+    localparam [2:0] ALU_SRL_SRA = 3'b101;
+    localparam [2:0] ALU_OR = 3'b110;
+    localparam [2:0] ALU_AND = 3'b111;
+
     reg [31:0] result;
     wire [31:0] left_1, left_2, left_4, left_8, left_16;
     wire [31:0] right_1, right_2, right_4, right_8, right_16;
@@ -65,53 +71,20 @@ module alu (
     assign right_16 = i_op2[4] ? {{16{right_fill}}, right_8[31:16]} : right_8;
 
     always @(*) begin
-    result = 32'b0; // Default assignment
+        case (i_opsel)
+            ALU_ADD_SUB: result = i_sub ? (i_op1 - i_op2) : (i_op1 + i_op2);
+            ALU_SLL:     result = left_16;
+            ALU_SLT,
+            ALU_SLTU:    result = {31'b0, o_slt};
+            ALU_XOR:     result = i_op1 ^ i_op2;
+            ALU_SRL_SRA: result = right_16;
+            ALU_OR:      result = i_op1 | i_op2;
+            ALU_AND:     result = i_op1 & i_op2;
+            default:     result = 32'b0;
+        endcase
+    end
 
-    // 3'b001: shift left logical
-    // 3'b010,
-    // 3'b011: set less than/unsigned if `i_unsigned` asserted
-    // 3'b100: exclusive or
-    // 3'b101: shift right logical/arithmetic if `i_arith` asserted
-    // 3'b110: or
-    // 3'b111: and
-    case (i_opsel)
-        3'b000: begin // addition / sub
-            result = i_sub ? (i_op1 - i_op2) : (i_op1 + i_op2);
-        end
-
-        3'b001: begin
-            result = left_16;
-        end
-
-        3'b010,
-        3'b011: begin
-            result = {31'b0, o_slt};
-        end
-
-        3'b100: begin
-            result = i_op1 ^ i_op2;
-        end
-
-        3'b101: begin
-            result = right_16;
-        end
-
-        3'b110: begin
-            result = i_op1 | i_op2;
-        end
-
-        3'b111: begin
-            result = i_op1 & i_op2;
-        end
-
-        default: begin
-            result = 32'b0;
-        end
-    endcase
-end
-
-
-    assign o_result = result; 
+    assign o_result = result;
 
     assign o_eq = (i_op1 == i_op2);
     // Unsigned ordering also works for signed operands with matching signs.

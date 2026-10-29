@@ -1,4 +1,5 @@
-// Fetch to Decode Pipeline Register, needs to check whether we are flushing information or stalling
+// Fetch to Decode pipeline register.
+`default_nettype none
 
 module fd_register (
     input wire i_clk,
@@ -6,28 +7,38 @@ module fd_register (
     input wire i_flush,
     input wire i_stall,
 
-    // Instructions from Fetch Stage
+    // Inputs from Fetch.
+    input wire i_valid,
     input wire [31:0] i_inst,
     input wire [31:0] i_pc,
 
-
-    // Output going to Decode Stage
-    output wire [31:0] o_pc,
-    output wire [31:0] o_inst,
+    // Outputs to Decode.
+    output reg o_valid,
+    output reg [31:0] o_pc,
+    output reg [31:0] o_inst
 );
 
-    always @(posedge i_clk or posedge i_rst) begin
-        if (i_rst or i_flush) begin
-            // Load a nop
-            o_pc <= 32'b0;
-            o_inst <= 32'h00000013; // nop instruction, adds 0 to x0 so it doesn't matter
+    // NOP instruction.
+    localparam [31:0] NOP_INST = 32'h00000013;
+
+    // Reset/flush clears the register. Stall keeps the current values.
+    always @(posedge i_clk) begin
+        // Reset/flush has priority over stall.
+        if (i_rst || i_flush) begin
+            // Insert a bubble.
+            o_valid <= 1'b0;
+            o_pc    <= 32'b0;
+            o_inst  <= NOP_INST;
 
         end else if (!i_stall) begin
-            // If not a stall, pass on the input pc and the input instruction to Decode
-            o_pc <= i_pc;
-            o_inst <= i_inst;
+            // Save the new instruction and its PC.
+            o_valid <= i_valid;
+            o_pc    <= i_pc;
+            o_inst  <= i_inst;
         end
-        // if it is a stall then just keep the current values by doing nothing
+        // On a stall, keep the current values.
     end
 
 endmodule
+
+`default_nettype wire
