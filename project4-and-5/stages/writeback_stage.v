@@ -14,6 +14,12 @@ module writeback_stage (
     input wire [31:0] i_rs2_rdata,
     input wire [4:0] i_rd_waddr,
     input wire [31:0] i_rd_wdata,
+    input wire [31:0] i_dmem_addr,
+    input wire i_dmem_ren,
+    input wire i_dmem_wen,
+    input wire [3:0] i_dmem_mask,
+    input wire [31:0] i_dmem_wdata,
+    input wire [31:0] i_dmem_rdata,
     input wire i_reg_wen,
     input wire i_trap,
     input wire i_halt,
@@ -35,7 +41,13 @@ module writeback_stage (
     output wire [4:0] o_retire_rd_waddr,
     output wire [31:0] o_retire_rd_wdata,
     output wire [31:0] o_retire_pc,
-    output wire [31:0] o_retire_next_pc
+    output wire [31:0] o_retire_next_pc,
+    output wire [31:0] o_retire_dmem_addr,
+    output wire o_retire_dmem_ren,
+    output wire o_retire_dmem_wen,
+    output wire [3:0] o_retire_dmem_mask,
+    output wire [31:0] o_retire_dmem_wdata,
+    output wire [31:0] o_retire_dmem_rdata
 );
     // Write only valid results. Never write x0 or a faulting instruction.
     assign o_rf_wen = i_valid && i_reg_wen && !i_trap && !i_halt &&
@@ -56,6 +68,12 @@ module writeback_stage (
     assign o_retire_rd_wdata = i_rd_wdata;
     assign o_retire_pc = i_pc;
     assign o_retire_next_pc = i_next_pc;
+    assign o_retire_dmem_addr = i_dmem_addr;
+    assign o_retire_dmem_ren = o_retire_valid && !i_trap && !i_halt && i_dmem_ren;
+    assign o_retire_dmem_wen = o_retire_valid && !i_trap && !i_halt && i_dmem_wen;
+    assign o_retire_dmem_mask = i_dmem_mask;
+    assign o_retire_dmem_wdata = i_dmem_wdata;
+    assign o_retire_dmem_rdata = i_dmem_rdata;
 endmodule
 
 `default_nettype wire

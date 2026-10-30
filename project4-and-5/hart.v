@@ -127,7 +127,13 @@ module hart #(
     // the next program counter after the instruction is retired. For most
     // instructions, this is `o_retire_pc + 4`, but must be the branch or jump
     // target for *taken* branches and jumps.
-    output wire [31:0] o_retire_next_pc
+    output wire [31:0] o_retire_next_pc,
+    output wire [31:0] o_retire_dmem_addr,
+    output wire o_retire_dmem_ren,
+    output wire o_retire_dmem_wen,
+    output wire [3:0] o_retire_dmem_mask,
+    output wire [31:0] o_retire_dmem_wdata,
+    output wire [31:0] o_retire_dmem_rdata
 
 `ifdef RISCV_FORMAL
     ,`RVFI_OUTPUTS,
@@ -182,6 +188,9 @@ module hart #(
     wire [31:0] w_inst, w_pc, w_next_pc;
     wire [4:0] w_rs1_raddr, w_rs2_raddr, w_rd_waddr;
     wire [31:0] w_rs1_rdata, w_rs2_rdata, w_rd_wdata;
+    wire [31:0] w_dmem_addr, w_dmem_wdata, w_dmem_rdata;
+    wire w_dmem_ren, w_dmem_wen;
+    wire [3:0] w_dmem_mask;
     wire wb_reg_wen;
     wire [4:0] wb_rd_waddr;
     wire [31:0] wb_rd_wdata;
@@ -459,6 +468,12 @@ module hart #(
         .i_rs2_rdata(m_rs2_rdata),
         .i_alu_result(m_alu_result),
         .i_mem_data(m_load_data),
+        .i_dmem_addr(o_dmem_addr),
+        .i_dmem_ren(o_dmem_ren),
+        .i_dmem_wen(o_dmem_wen),
+        .i_dmem_mask(o_dmem_mask),
+        .i_dmem_wdata(o_dmem_wdata),
+        .i_dmem_rdata(i_dmem_rdata),
         .i_pc_plus4(m_pc_plus4),
         .i_wb_sel(m_wb_sel),
         .i_reg_wen(m_reg_wen),
@@ -474,6 +489,12 @@ module hart #(
         .o_rs1_rdata(w_rs1_rdata),
         .o_rs2_rdata(w_rs2_rdata),
         .o_rd_wdata(w_rd_wdata),
+        .o_dmem_addr(w_dmem_addr),
+        .o_dmem_ren(w_dmem_ren),
+        .o_dmem_wen(w_dmem_wen),
+        .o_dmem_mask(w_dmem_mask),
+        .o_dmem_wdata(w_dmem_wdata),
+        .o_dmem_rdata(w_dmem_rdata),
         .o_reg_wen(w_reg_wen),
         .o_trap(w_trap),
         .o_halt(w_halt)
@@ -493,6 +514,12 @@ module hart #(
         .i_rs2_rdata(w_rs2_rdata),
         .i_rd_waddr(w_rd_waddr),
         .i_rd_wdata(w_rd_wdata),
+        .i_dmem_addr(w_dmem_addr),
+        .i_dmem_ren(w_dmem_ren),
+        .i_dmem_wen(w_dmem_wen),
+        .i_dmem_mask(w_dmem_mask),
+        .i_dmem_wdata(w_dmem_wdata),
+        .i_dmem_rdata(w_dmem_rdata),
         .i_reg_wen(w_reg_wen),
         .i_trap(w_trap),
         .i_halt(w_halt),
@@ -510,7 +537,13 @@ module hart #(
         .o_retire_rd_waddr(o_retire_rd_waddr),
         .o_retire_rd_wdata(o_retire_rd_wdata),
         .o_retire_pc(o_retire_pc),
-        .o_retire_next_pc(o_retire_next_pc)
+        .o_retire_next_pc(o_retire_next_pc),
+        .o_retire_dmem_addr(o_retire_dmem_addr),
+        .o_retire_dmem_ren(o_retire_dmem_ren),
+        .o_retire_dmem_wen(o_retire_dmem_wen),
+        .o_retire_dmem_mask(o_retire_dmem_mask),
+        .o_retire_dmem_wdata(o_retire_dmem_wdata),
+        .o_retire_dmem_rdata(o_retire_dmem_rdata)
     );
 
 endmodule

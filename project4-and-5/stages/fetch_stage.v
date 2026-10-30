@@ -30,7 +30,7 @@ module fetch_stage #(
     assign pc_plus4 = o_pc + 32'd4;
     assign next_pc = i_stop     ? o_pc          :
                      i_redirect ? i_redirect_pc :
-                     i_stall    ? o_pc          : pc_plus4;
+                    i_stall    ? o_pc          : pc_plus4;
 
     PC_reg #(
         .RESET_ADDR(RESET_ADDR)

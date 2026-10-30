@@ -21,6 +21,12 @@ module mw_register (
     input wire [31:0] i_alu_result,
     // Load data is already aligned and extended.
     input wire [31:0] i_mem_data,
+    input wire [31:0] i_dmem_addr,
+    input wire i_dmem_ren,
+    input wire i_dmem_wen,
+    input wire [3:0] i_dmem_mask,
+    input wire [31:0] i_dmem_wdata,
+    input wire [31:0] i_dmem_rdata,
     input wire [31:0] i_pc_plus4,
     input wire [1:0] i_wb_sel,
     input wire i_reg_wen,
@@ -38,6 +44,12 @@ module mw_register (
     output reg [31:0] o_rs1_rdata,
     output reg [31:0] o_rs2_rdata,
     output reg [31:0] o_rd_wdata,
+    output reg [31:0] o_dmem_addr,
+    output reg o_dmem_ren,
+    output reg o_dmem_wen,
+    output reg [3:0] o_dmem_mask,
+    output reg [31:0] o_dmem_wdata,
+    output reg [31:0] o_dmem_rdata,
     output reg o_reg_wen,
     output reg o_trap,
     output reg o_halt
@@ -74,6 +86,12 @@ module mw_register (
             o_rs1_rdata <= 32'b0;
             o_rs2_rdata <= 32'b0;
             o_rd_wdata  <= 32'b0;
+            o_dmem_addr <= 32'b0;
+            o_dmem_ren  <= 1'b0;
+            o_dmem_wen  <= 1'b0;
+            o_dmem_mask <= 4'b0;
+            o_dmem_wdata <= 32'b0;
+            o_dmem_rdata <= 32'b0;
             o_reg_wen   <= 1'b0;
             o_trap      <= 1'b0;
             o_halt      <= 1'b0;
@@ -88,6 +106,12 @@ module mw_register (
             o_rs1_rdata <= i_rs1_rdata;
             o_rs2_rdata <= i_rs2_rdata;
             o_rd_wdata  <= wb_data;
+            o_dmem_addr <= i_dmem_addr;
+            o_dmem_ren  <= i_dmem_ren;
+            o_dmem_wen  <= i_dmem_wen;
+            o_dmem_mask <= i_dmem_mask;
+            o_dmem_wdata <= i_dmem_wdata;
+            o_dmem_rdata <= i_dmem_rdata;
             o_reg_wen   <= i_reg_wen;
             o_trap      <= i_trap;
             o_halt      <= i_halt;
