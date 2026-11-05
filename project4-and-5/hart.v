@@ -173,13 +173,15 @@ module hart #(
     wire x_is_branch, x_is_jal, x_is_jalr, x_illegal_inst;
     wire [31:0] x_alu_result, x_pc_plus4, x_next_pc;
     wire x_trap, x_halt, x_stop, x_redirect;
+    wire [1:0] x_rs1_source, x_rs2_source;
+    wire [31:0] x_rs1_fwd, x_rs2_fwd;
 
     // Memory signals.
     wire m_valid;
     wire [31:0] m_inst, m_pc, m_next_pc;
     wire [4:0] m_rs1_raddr, m_rs2_raddr, m_rd_waddr;
     wire [31:0] m_rs1_rdata, m_rs2_rdata;
-    wire [31:0] m_alu_result, m_pc_plus4, m_load_data;
+    wire [31:0] m_alu_result, m_pc_plus4, m_load_data, m_fwd_data;
     wire m_mem_ren, m_mem_wen, m_reg_wen, m_trap, m_halt;
     wire [1:0] m_wb_sel;
 
@@ -197,7 +199,6 @@ module hart #(
 
     // Pipeline control signals.
     wire x_writes_rd, m_writes_rd;
-    wire d_rs1_pending, d_rs2_pending;
     wire stall_decode;
     wire stop_fetch;
     wire flush_fetch_decode;
@@ -225,19 +226,10 @@ module hart #(
     assign m_writes_rd = m_valid && m_reg_wen && !m_trap && !m_halt &&
                          (m_rd_waddr != 5'd0);
 
-    assign d_rs1_pending = d_uses_rs1 && (d_rs1_raddr != 5'd0) &&
-        ((x_writes_rd && (d_rs1_raddr == x_rd_waddr)) ||
-         (m_writes_rd && (d_rs1_raddr == m_rd_waddr)) ||
-         (wb_reg_wen  && (d_rs1_raddr == w_rd_waddr)));
-
-    assign d_rs2_pending = d_uses_rs2 && (d_rs2_raddr != 5'd0) &&
-        ((x_writes_rd && (d_rs2_raddr == x_rd_waddr)) ||
-         (m_writes_rd && (d_rs2_raddr == m_rd_waddr)) ||
-         (wb_reg_wen  && (d_rs2_raddr == w_rd_waddr)));
-
-    // Wait through Writeback because RF bypass is off.
-    // Hold Fetch/FD and insert a bubble in DX while XM/MW keep moving.
-    assign stall_decode = d_valid && (d_rs1_pending || d_rs2_pending);
+    // Load data isn't ready until the end of Memory, so a use right after a load stalls once.
+    assign stall_decode = d_valid && x_writes_rd && x_mem_ren &&
+        ((d_uses_rs1 && d_rs1_raddr == x_rd_waddr) ||
+         (d_uses_rs2 && d_rs2_raddr == x_rd_waddr));
 
     // Fetch.
 
@@ -360,12 +352,32 @@ module hart #(
 
     // Execute.
 
+    //Forwarding unit
+    forwarding_unit forward (
+        .i_x_rs1_raddr(x_rs1_raddr),
+        .i_x_rs2_raddr(x_rs2_raddr),
+        .i_m_writes_rd(m_writes_rd),
+        .i_m_rd_waddr(m_rd_waddr),
+        .i_w_writes_rd(wb_reg_wen),
+        .i_w_rd_waddr(w_rd_waddr),
+        .o_rs1_source(x_rs1_source),
+        .o_rs2_source(x_rs2_source)
+    );
+
+    // Loads never forward from Memory because of the load-use stall.
+    assign m_fwd_data = (m_wb_sel == 2'b10) ? m_pc_plus4 : m_alu_result;
+
+    assign x_rs1_fwd = (x_rs1_source == 2'b10) ? m_fwd_data :
+                       (x_rs1_source == 2'b01) ? w_rd_wdata : x_rs1_rdata;
+    assign x_rs2_fwd = (x_rs2_source == 2'b10) ? m_fwd_data :
+                       (x_rs2_source == 2'b01) ? w_rd_wdata : x_rs2_rdata;
+
     execute_stage execute (
         .i_valid(x_valid),
         .i_inst(x_inst),
         .i_pc(x_pc),
-        .i_rs1_rdata(x_rs1_rdata),
-        .i_rs2_rdata(x_rs2_rdata),
+        .i_rs1_rdata(x_rs1_fwd),
+        .i_rs2_rdata(x_rs2_fwd),
         .i_imm_value(x_imm_value),
         .i_alu_opsel(x_alu_opsel),
         .i_alu_sub(x_alu_sub),
@@ -401,8 +413,8 @@ module hart #(
         .i_rs1_raddr(x_rs1_raddr),
         .i_rs2_raddr(x_rs2_raddr),
         .i_rd_waddr(x_rd_waddr),
-        .i_rs1_rdata(x_rs1_rdata),
-        .i_rs2_rdata(x_rs2_rdata),
+        .i_rs1_rdata(x_rs1_fwd),
+        .i_rs2_rdata(x_rs2_fwd),
         .i_alu_result(x_alu_result),
         .i_pc_plus4(x_pc_plus4),
         .i_mem_ren(x_mem_ren),

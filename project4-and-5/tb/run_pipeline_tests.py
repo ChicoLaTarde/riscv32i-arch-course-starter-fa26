@@ -309,7 +309,7 @@ def check_decoder(directory):
 def main():
     if not all(shutil.which(tool) for tool in ('iverilog', 'vvp')):
         raise SystemExit('Install Icarus Verilog (iverilog and vvp) to run these tests.')
-    sources = [ROOT / name for name in ('hart.v', 'PC_reg.v', 'rf.v', 'decoder.v', 'imm.v', 'alu.v')]
+    sources = [ROOT / name for name in ('hart.v', 'forwarding_unit.v', 'PC_reg.v', 'rf.v', 'decoder.v', 'imm.v', 'alu.v')]
     sources += sorted((ROOT / 'pipeline_registers').glob('*.v'))
     sources += sorted((ROOT / 'stages').glob('*.v'))
     total = retired = 0

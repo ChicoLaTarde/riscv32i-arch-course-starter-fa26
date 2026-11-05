@@ -5,7 +5,7 @@ ECE552 ?= ece552
 BUILD_DIR ?= build
 
 # The implementation is ./hart.v; rtl/hart.v is the original empty starter.
-RTL := hart.v PC_reg.v rf.v decoder.v imm.v alu.v \
+RTL := hart.v forwarding_unit.v PC_reg.v rf.v decoder.v imm.v alu.v \
        $(wildcard pipeline_registers/*.v) $(wildcard stages/*.v)
 
 .PHONY: test compile test-registers test-pipeline check
