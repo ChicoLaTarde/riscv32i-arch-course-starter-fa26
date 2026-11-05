@@ -78,9 +78,8 @@ module decode_stage (
         .o_immediate(o_imm_value)
     );
 
-    // Bypass is off, so Decode waits until Writeback finishes.
     rf #(
-        .BYPASS_EN(0)
+        .BYPASS_EN(1)
     ) register_file (
         .i_clk(i_clk),
         .i_rst(i_rst),

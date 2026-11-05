@@ -140,6 +140,8 @@ module hart #(
 `endif
 );
 
+    localparam [1:0] WB_PC4 = 2'b10;
+
     // Fetch -> FD -> Decode -> DX -> Execute -> XM -> Memory -> MW -> Writeback
     // f/d/x/m/w mark each stage. wb_ is the write path back to the register file.
     // valid = 0 means the stage contains a bubble.
@@ -166,6 +168,7 @@ module hart #(
     wire [31:0] x_inst, x_pc;
     wire [4:0] x_rs1_raddr, x_rs2_raddr, x_rd_waddr;
     wire [31:0] x_rs1_rdata, x_rs2_rdata, x_imm_value;
+    wire [31:0] x_rs1_value, x_rs2_value;
     wire [2:0] x_alu_opsel;
     wire x_alu_sub, x_alu_unsigned, x_alu_arith;
     wire [1:0] x_op1_sel, x_op2_sel, x_wb_sel;
@@ -196,8 +199,9 @@ module hart #(
     wire [31:0] wb_rd_wdata;
 
     // Pipeline control signals.
-    wire x_writes_rd, m_writes_rd;
-    wire d_rs1_pending, d_rs2_pending;
+    wire x_load_writes_rd, m_can_forward;
+    wire [31:0] m_forward_data;
+    wire d_load_use_rs1, d_load_use_rs2;
     wire stall_decode;
     wire stop_fetch;
     wire flush_fetch_decode;
@@ -219,25 +223,24 @@ module hart #(
     assign flush_fetch_decode = stop_fetch || x_redirect;
     assign flush_decode_execute = flush_fetch_decode || stall_decode;
 
-    // Check whether an older instruction still needs to write a register.
-    assign x_writes_rd = x_valid && x_reg_wen && !x_trap && !x_halt &&
-                         (x_rd_waddr != 5'd0);
-    assign m_writes_rd = m_valid && m_reg_wen && !m_trap && !m_halt &&
-                         (m_rd_waddr != 5'd0);
+    assign m_can_forward = m_valid && m_reg_wen && !m_mem_ren &&
+                           !m_trap && !m_halt && (m_rd_waddr != 5'd0);
+    assign m_forward_data = (m_wb_sel == WB_PC4) ? m_pc_plus4 : m_alu_result;
+    assign x_rs1_value = (m_can_forward && (x_rs1_raddr == m_rd_waddr)) ? m_forward_data :
+                         (wb_reg_wen && (x_rs1_raddr == w_rd_waddr)) ? w_rd_wdata :
+                         x_rs1_rdata;
+    assign x_rs2_value = (m_can_forward && (x_rs2_raddr == m_rd_waddr)) ? m_forward_data :
+                         (wb_reg_wen && (x_rs2_raddr == w_rd_waddr)) ? w_rd_wdata :
+                         x_rs2_rdata;
 
-    assign d_rs1_pending = d_uses_rs1 && (d_rs1_raddr != 5'd0) &&
-        ((x_writes_rd && (d_rs1_raddr == x_rd_waddr)) ||
-         (m_writes_rd && (d_rs1_raddr == m_rd_waddr)) ||
-         (wb_reg_wen  && (d_rs1_raddr == w_rd_waddr)));
+    assign x_load_writes_rd = x_valid && x_mem_ren && x_reg_wen &&
+                              !x_trap && !x_halt && (x_rd_waddr != 5'd0);
+    assign d_load_use_rs1 = d_uses_rs1 && (d_rs1_raddr == x_rd_waddr);
+    assign d_load_use_rs2 = d_uses_rs2 && (d_rs2_raddr == x_rd_waddr);
 
-    assign d_rs2_pending = d_uses_rs2 && (d_rs2_raddr != 5'd0) &&
-        ((x_writes_rd && (d_rs2_raddr == x_rd_waddr)) ||
-         (m_writes_rd && (d_rs2_raddr == m_rd_waddr)) ||
-         (wb_reg_wen  && (d_rs2_raddr == w_rd_waddr)));
-
-    // Wait through Writeback because RF bypass is off.
     // Hold Fetch/FD and insert a bubble in DX while XM/MW keep moving.
-    assign stall_decode = d_valid && (d_rs1_pending || d_rs2_pending);
+    assign stall_decode = d_valid && x_load_writes_rd &&
+                          (d_load_use_rs1 || d_load_use_rs2);
 
     // Fetch.
 
@@ -364,8 +367,8 @@ module hart #(
         .i_valid(x_valid),
         .i_inst(x_inst),
         .i_pc(x_pc),
-        .i_rs1_rdata(x_rs1_rdata),
-        .i_rs2_rdata(x_rs2_rdata),
+        .i_rs1_rdata(x_rs1_value),
+        .i_rs2_rdata(x_rs2_value),
         .i_imm_value(x_imm_value),
         .i_alu_opsel(x_alu_opsel),
         .i_alu_sub(x_alu_sub),
@@ -401,8 +404,8 @@ module hart #(
         .i_rs1_raddr(x_rs1_raddr),
         .i_rs2_raddr(x_rs2_raddr),
         .i_rd_waddr(x_rd_waddr),
-        .i_rs1_rdata(x_rs1_rdata),
-        .i_rs2_rdata(x_rs2_rdata),
+        .i_rs1_rdata(x_rs1_value),
+        .i_rs2_rdata(x_rs2_value),
         .i_alu_result(x_alu_result),
         .i_pc_plus4(x_pc_plus4),
         .i_mem_ren(x_mem_ren),

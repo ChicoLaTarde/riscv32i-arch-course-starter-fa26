@@ -191,6 +191,13 @@ def cases():
     yield 'raw-both-operands', [ri(1, 0, 7), ri(2, 1, 5), rr(3, 1, 2),
                               ri(3, 3, -1), rr(4, 3, 3), ri(0, 4, 99),
                               ri(5, 0, 0), HALT], 0, 0
+    yield 'writeback-decode-bypass', [ri(1, 0, 7), NOP, NOP, rr(2, 1, 1), HALT], 0, 0
+    yield 'load-use-one-bubble', [ri(1, 0, -128), store(1, 0, 0, 0),
+                                 ri(2, 0, 0, 0, 0x03), rr(3, 2, 2), HALT], 0, 0
+    yield 'load-no-false-hazard', [ri(5, 0, 0, 2, 0x03), ri(2, 0, 5),
+                                  ri(0, 0, 0, 2, 0x03), ri(3, 0, 1), HALT], 0, 0
+    yield 'not-taken-no-bubble', [ri(1, 0, 1), branch(1, 0, 12),
+                                 ri(2, 1, 4), store(2, 0), HALT], 0, 0
     memory = [ri(20, 0, 256), upper(1, 0x89ABD), ri(1, 1, -0x211), store(1, 20)]
     for f3, offsets in [(2, [0]), (0, range(4)), (4, range(4)), (1, [0, 2]), (5, [0, 2])]:
         memory += [ri(2, 20, offset, f3, 0x03) for offset in offsets]
@@ -203,7 +210,7 @@ def cases():
             conditions += [branch(a, b, 12, f3), store(1, 0, 0), ri(4, 4, 1)]
     yield 'all-branch-conditions', conditions + [HALT], 0, 0
     yield 'backward-branch', [ri(1, 0, 4), ri(1, 1, -1), branch(1, 0, -4, 1), HALT], 0, 0
-    yield 'redirect-overrides-stall', [ri(5, 0, 1), branch(0, 0, 12),
+    yield 'redirect-with-older-writer', [ri(5, 0, 1), branch(0, 0, 12),
                                       ri(6, 5, 1), store(5, 0), HALT], 0, 0
     yield 'flush-wrong-path-trap', [branch(0, 0, 12), 0xFFFFFFFF, store(0, 0), HALT], 0, 0
     yield 'jal-jalr-links-and-odd-target', [ri(5, 0, 0), jump(1, 12), ri(5, 5, 10),
@@ -312,6 +319,15 @@ def main():
     sources = [ROOT / name for name in ('hart.v', 'PC_reg.v', 'rf.v', 'decoder.v', 'imm.v', 'alu.v')]
     sources += sorted((ROOT / 'pipeline_registers').glob('*.v'))
     sources += sorted((ROOT / 'stages').glob('*.v'))
+    expected_retire_gaps = {
+        'independent-throughput': [1] * 6,
+        'raw-both-operands': [1] * 7,
+        'writeback-decode-bypass': [1] * 4,
+        'load-use-one-bubble': [1, 1, 2, 1],
+        'load-no-false-hazard': [1] * 4,
+        'not-taken-no-bubble': [1] * 4,
+        'flush-wrong-path-trap': [3],
+    }
     total = retired = 0
     with tempfile.TemporaryDirectory(prefix='riscvcpu-pipeline-') as directory:
         directory = Path(directory)
@@ -354,9 +370,10 @@ def main():
                 if wanted[1]:
                     mask = sum(255 << (lane * 8) for lane in range(4) if wanted[3] & (1 << lane))
                     assert observed[4] & mask == wanted[4] & mask, name + ': incorrect store data'
-            if name == 'independent-throughput':
-                assert cycles[0] == 5, 'incorrect pipeline fill latency'
-                assert all(b == a + 1 for a, b in zip(cycles, cycles[1:])), 'unnecessary stalls'
+            if name in expected_retire_gaps:
+                assert cycles[0] == 5, name + ': incorrect pipeline fill latency'
+                gaps = [later - earlier for earlier, later in zip(cycles, cycles[1:])]
+                assert gaps == expected_retire_gaps[name], (name, gaps, expected_retire_gaps[name])
             if name.startswith('assembly-'):
                 assert registers[10] == 1, name + ': assembly program reached fail label'
             print('PASS: %s (%d retired)' % (name, len(actual)))
