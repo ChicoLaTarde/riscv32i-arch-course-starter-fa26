@@ -22,14 +22,20 @@ existing MW interface selects ALU/load/PC+4 data before registering it, so
 Writeback receives an already selected result. Data paths use `[31:0]`;
 register numbers use `[4:0]`.
 
-`hart.v` coordinates dependencies and flushing across stages. With forwarding
-and RF bypass disabled, a dependent instruction holds Fetch and FD until its
-source registers have been written. DX receives a bubble while older
-instructions continue. Dependencies on x0 and unused instruction fields do
-not stall execution. Independent instructions can retire every cycle after
-the pipeline fills.
+`hart.v` forwards each Execute source independently. EX-EX forwarding uses
+the result in XM (ALU result or PC+4), and MEM-EX forwarding uses the selected
+result in MW, including completed loads. XM has priority when both stages
+write the same register. Register-file bypass supplies writes to Decode in
+the same cycle. Forwarded source values also feed stores and retirement.
 
-Branches and jumps resolve in Execute, redirect Fetch, and flush FD/DX. A
+An immediately dependent load-use instruction holds Fetch and FD for one
+cycle and inserts a DX bubble while the load finishes Memory. The consumer
+then receives the load result from MW. Dependencies on x0 and unused
+instruction fields do not stall execution.
+
+Fetch predicts branches not taken by continuing at PC+4. Branches and jumps
+resolve in Execute. Taken branches and jumps redirect Fetch and flush FD/DX;
+not-taken branches leave the sequential instructions in place. A
 halt or trap flushes younger instructions, allows older instructions to
 finish, and stops execution until reset. Faulting memory instructions issue
 no memory request. Valid bits exclude bubbles from architectural effects
@@ -67,10 +73,10 @@ Decode reads x1 -> d_rs1_rdata -> DX input
                                   |
                            rising clock edge
                                   |
-Execute uses x_rs1_rdata <- DX output
+Execute selects x_rs1_value from DX, XM, or MW
 ```
 
-In `.i_rs1_rdata (x_rs1_rdata)`, the name on the left is the child module's
+In `.i_rs1_rdata (x_rs1_value)`, the name on the left is the child module's
 input port. The name in parentheses is the wire in `hart.v` connected to it.
 At that same clock edge other instructions advance in the other stages.
 
@@ -79,7 +85,7 @@ The controls have different purposes:
 | Event | Fetch PC | FD | DX | Older instructions |
 | --- | --- | --- | --- | --- |
 | Normal cycle | Advance by 4 | Capture Fetch | Capture Decode | Advance |
-| Source register still pending | Hold | Hold | Insert a bubble | Advance |
+| Immediate load-use dependency | Hold | Hold | Insert a bubble | Advance |
 | Taken branch or jump | Redirect to target | Flush | Flush | Advance |
 | Trap or halt in Execute | Hold until reset | Flush | Flush | Finish; trap/halt retires once |
 | Reset | Set to `RESET_ADDR` | Clear | Clear | Clear XM/MW too |
@@ -126,6 +132,8 @@ model. Coverage includes dependencies, x0, pipeline throughput, load/store
 byte lanes, branch conditions, JAL/JALR, flushing, halt/trap draining,
 reset during execution, a nonzero reset address, deterministic randomized
 programs, and the supplied assembled `.hex` programs.
+Timing checks verify stall-free forwarded ALU dependencies, one load-use
+bubble, and the retirement gaps for taken and not-taken branches.
 
 Decoder checks sweep every funct3/funct7 combination for register and
 immediate ALU instructions, plus load/store/branch/JALR encodings. Expected
