@@ -159,7 +159,463 @@ module hart #(
     // target for *taken* branches and jumps.
     output wire [31:0] o_retire_next_pc
 );
-    // YOUR CODE HERE
+    // Fetch -> FD -> Decode -> DX -> Execute -> XM -> Memory -> MW -> Writeback
+    // f/d/x/m/w mark each stage. wb_ is the write path back to the register file.
+    // valid = 0 means the stage contains a bubble.
+
+    // Fetch signals.
+    wire f_valid;
+    wire [31:0] f_pc;
+    wire [31:0] f_inst;
+
+    // Decode signals.
+    wire d_valid;
+    wire [31:0] d_inst, d_pc;
+    wire [4:0] d_rs1_raddr, d_rs2_raddr, d_rd_waddr;
+    wire [31:0] d_rs1_rdata, d_rs2_rdata, d_imm_value;
+    wire [2:0] d_alu_opsel;
+    wire d_alu_sub, d_alu_unsigned, d_alu_arith;
+    wire [1:0] d_op1_sel, d_op2_sel, d_wb_sel;
+    wire d_reg_wen, d_mem_ren, d_mem_wen;
+    wire d_is_branch, d_is_jal, d_is_jalr, d_illegal_inst;
+    wire d_uses_rs1, d_uses_rs2;
+
+    // Execute signals.
+    wire x_valid;
+    wire [31:0] x_inst, x_pc;
+    wire [4:0] x_rs1_raddr, x_rs2_raddr, x_rd_waddr;
+    wire [31:0] x_rs1_rdata, x_rs2_rdata, x_imm_value;
+    wire [2:0] x_alu_opsel;
+    wire x_alu_sub, x_alu_unsigned, x_alu_arith;
+    wire [1:0] x_op1_sel, x_op2_sel, x_wb_sel;
+    wire x_reg_wen, x_mem_ren, x_mem_wen;
+    wire x_is_branch, x_is_jal, x_is_jalr, x_illegal_inst;
+    wire [31:0] x_alu_result, x_pc_plus4, x_next_pc;
+    wire x_trap, x_halt, x_stop, x_redirect;
+    wire [1:0] x_rs1_source, x_rs2_source;
+    wire [31:0] x_rs1_fwd, x_rs2_fwd;
+
+    // Memory signals.
+    wire m_valid;
+    wire [31:0] m_inst, m_pc, m_next_pc;
+    wire [4:0] m_rs1_raddr, m_rs2_raddr, m_rd_waddr;
+    wire [31:0] m_rs1_rdata, m_rs2_rdata;
+    wire [31:0] m_alu_result, m_pc_plus4, m_load_data, m_fwd_data;
+    wire m_mem_ren, m_mem_wen, m_reg_wen, m_trap, m_halt;
+    wire [1:0] m_wb_sel;
+
+    // Writeback signals.
+    wire w_valid, w_reg_wen, w_trap, w_halt;
+    wire [31:0] w_inst, w_pc, w_next_pc;
+    wire [4:0] w_rs1_raddr, w_rs2_raddr, w_rd_waddr;
+    wire [31:0] w_rs1_rdata, w_rs2_rdata, w_rd_wdata;
+    wire [31:0] w_dmem_addr, w_dmem_wdata, w_dmem_rdata;
+    wire w_dmem_ren, w_dmem_wen;
+    wire [3:0] w_dmem_mask;
+    wire wb_reg_wen;
+    wire [4:0] wb_rd_waddr;
+    wire [31:0] wb_rd_wdata;
+    wire m_dmem_ren, m_dmem_wen;
+    wire stall_memory, stall_front;
+    wire dmem_response, x_stop_request, x_redirect_request;
+    reg dmem_pending;
+    reg x_held_operands;
+    reg [31:0] x_held_rs1, x_held_rs2;
+
+    // Pipeline control signals.
+    wire x_writes_rd, m_writes_rd;
+    wire stall_decode;
+    wire stop_fetch;
+    wire flush_fetch_decode;
+    wire flush_decode_execute;
+    reg execution_stopped;
+
+    assign o_dmem_ren = m_dmem_ren && !dmem_pending && i_dmem_ready && !i_rst;
+    assign o_dmem_wen = m_dmem_wen && i_dmem_ready && !i_rst;
+    assign dmem_response = i_dmem_valid && (dmem_pending || o_dmem_ren);
+    assign stall_memory = (m_dmem_ren && !dmem_response) ||
+                          (m_dmem_wen && !i_dmem_ready);
+    assign stall_front = stall_decode || stall_memory;
+    assign x_stop = x_stop_request && !stall_memory;
+    assign x_redirect = x_redirect_request && !stall_memory;
+
+    always @(posedge i_clk) begin
+        if (i_rst) begin
+            dmem_pending <= 1'b0;
+            x_held_operands <= 1'b0;
+            x_held_rs1 <= 32'b0;
+            x_held_rs2 <= 32'b0;
+        end else begin
+            if (dmem_response)
+                dmem_pending <= 1'b0;
+            else if (o_dmem_ren)
+                dmem_pending <= 1'b1;
+            x_held_operands <= stall_memory;
+            if (stall_memory) begin
+                x_held_rs1 <= x_rs1_fwd;
+                x_held_rs2 <= x_rs2_fwd;
+            end
+        end
+    end
+
+    // Pipeline control.
+
+    // After a trap or halt, stop Fetch and let the older instructions finish.
+    always @(posedge i_clk) begin
+        if (i_rst)
+            execution_stopped <= 1'b0;
+        else if (x_stop)
+            execution_stopped <= 1'b1;
+    end
+
+    // Flush younger instructions on a branch, jump, trap, or halt.
+    assign stop_fetch = execution_stopped || x_stop;
+    assign flush_fetch_decode = stop_fetch || x_redirect;
+    assign flush_decode_execute = flush_fetch_decode || (stall_decode && !stall_memory);
+
+    // Check whether an older instruction still needs to write a register.
+    assign x_writes_rd = x_valid && x_reg_wen && !x_trap && !x_halt &&
+                         (x_rd_waddr != 5'd0);
+    assign m_writes_rd = m_valid && m_reg_wen && !m_mem_ren && !m_trap && !m_halt &&
+                         (m_rd_waddr != 5'd0);
+
+    // Load data isn't ready until the end of Memory, so a use right after a load stalls once.
+    assign stall_decode = d_valid && x_writes_rd && x_mem_ren &&
+        ((d_uses_rs1 && d_rs1_raddr == x_rd_waddr) ||
+         (d_uses_rs2 && d_rs2_raddr == x_rd_waddr));
+
+    // Fetch.
+
+    fetch_stage #(
+        .RESET_ADDR(RESET_ADDR)
+    ) fetch (
+        .i_clk(i_clk),
+        .i_rst(i_rst),
+        .i_stall(stall_front),
+        .i_stop(stop_fetch),
+        .i_redirect(x_redirect),
+        .i_redirect_pc(x_next_pc),
+        .i_imem_rdata(i_imem_rdata),
+        .i_imem_ready(i_imem_ready),
+        .i_imem_valid(i_imem_valid),
+        .o_imem_ren(o_imem_ren),
+        .o_imem_raddr(o_imem_raddr),
+        .o_valid(f_valid),
+        .o_pc(f_pc),
+        .o_inst(f_inst)
+    );
+
+    // Save Fetch outputs for Decode.
+    fd_register fd (
+        .i_clk(i_clk),
+        .i_rst(i_rst),
+        .i_flush(flush_fetch_decode),
+        .i_stall(stall_front),
+        .i_valid(f_valid),
+        .i_inst(f_inst),
+        .i_pc(f_pc),
+        .o_valid(d_valid),
+        .o_inst(d_inst),
+        .o_pc(d_pc)
+    );
+
+    // Decode.
+
+    decode_stage decode (
+        .i_clk(i_clk),
+        .i_rst(i_rst),
+        .i_inst(d_inst),
+        .i_wb_wen(wb_reg_wen),
+        .i_wb_waddr(wb_rd_waddr),
+        .i_wb_wdata(wb_rd_wdata),
+        .o_rs1_raddr(d_rs1_raddr),
+        .o_rs2_raddr(d_rs2_raddr),
+        .o_rd_waddr(d_rd_waddr),
+        .o_rs1_rdata(d_rs1_rdata),
+        .o_rs2_rdata(d_rs2_rdata),
+        .o_imm_value(d_imm_value),
+        .o_alu_opsel(d_alu_opsel),
+        .o_alu_sub(d_alu_sub),
+        .o_alu_unsigned(d_alu_unsigned),
+        .o_alu_arith(d_alu_arith),
+        .o_op1_sel(d_op1_sel),
+        .o_op2_sel(d_op2_sel),
+        .o_is_branch(d_is_branch),
+        .o_is_jal(d_is_jal),
+        .o_is_jalr(d_is_jalr),
+        .o_illegal_inst(d_illegal_inst),
+        .o_mem_ren(d_mem_ren),
+        .o_mem_wen(d_mem_wen),
+        .o_wb_sel(d_wb_sel),
+        .o_reg_wen(d_reg_wen),
+        .o_uses_rs1(d_uses_rs1),
+        .o_uses_rs2(d_uses_rs2)
+    );
+
+    // Save Decode outputs. A dependency stall inserts a bubble here.
+    dx_register dx (
+        .i_clk(i_clk),
+        .i_rst(i_rst),
+        .i_flush(flush_decode_execute),
+        .i_stall(stall_memory),
+        .i_valid(d_valid),
+        .i_inst(d_inst),
+        .i_pc(d_pc),
+        .i_rs1_raddr(d_rs1_raddr),
+        .i_rs2_raddr(d_rs2_raddr),
+        .i_rd_waddr(d_rd_waddr),
+        .i_rs1_rdata(d_rs1_rdata),
+        .i_rs2_rdata(d_rs2_rdata),
+        .i_imm_value(d_imm_value),
+        .i_alu_opsel(d_alu_opsel),
+        .i_alu_sub(d_alu_sub),
+        .i_alu_unsigned(d_alu_unsigned),
+        .i_alu_arith(d_alu_arith),
+        .i_op1_sel(d_op1_sel),
+        .i_op2_sel(d_op2_sel),
+        .i_is_branch(d_is_branch),
+        .i_is_jal(d_is_jal),
+        .i_is_jalr(d_is_jalr),
+        .i_illegal_inst(d_illegal_inst),
+        .i_mem_ren(d_mem_ren),
+        .i_mem_wen(d_mem_wen),
+        .i_wb_sel(d_wb_sel),
+        .i_reg_wen(d_reg_wen),
+        .o_valid(x_valid),
+        .o_inst(x_inst),
+        .o_pc(x_pc),
+        .o_rs1_raddr(x_rs1_raddr),
+        .o_rs2_raddr(x_rs2_raddr),
+        .o_rd_waddr(x_rd_waddr),
+        .o_rs1_rdata(x_rs1_rdata),
+        .o_rs2_rdata(x_rs2_rdata),
+        .o_imm_value(x_imm_value),
+        .o_alu_opsel(x_alu_opsel),
+        .o_alu_sub(x_alu_sub),
+        .o_alu_unsigned(x_alu_unsigned),
+        .o_alu_arith(x_alu_arith),
+        .o_op1_sel(x_op1_sel),
+        .o_op2_sel(x_op2_sel),
+        .o_is_branch(x_is_branch),
+        .o_is_jal(x_is_jal),
+        .o_is_jalr(x_is_jalr),
+        .o_illegal_inst(x_illegal_inst),
+        .o_mem_ren(x_mem_ren),
+        .o_mem_wen(x_mem_wen),
+        .o_wb_sel(x_wb_sel),
+        .o_reg_wen(x_reg_wen)
+    );
+
+    // Execute.
+
+    //Forwarding unit
+    forwarding_unit forward (
+        .i_x_rs1_raddr(x_rs1_raddr),
+        .i_x_rs2_raddr(x_rs2_raddr),
+        .i_m_writes_rd(m_writes_rd),
+        .i_m_rd_waddr(m_rd_waddr),
+        .i_w_writes_rd(wb_reg_wen),
+        .i_w_rd_waddr(w_rd_waddr),
+        .o_rs1_source(x_rs1_source),
+        .o_rs2_source(x_rs2_source)
+    );
+
+    // Loads never forward from Memory because of the load-use stall.
+    assign m_fwd_data = (m_wb_sel == 2'b10) ? m_pc_plus4 : m_alu_result;
+
+    assign x_rs1_fwd = (x_rs1_source == 2'b10) ? m_fwd_data :
+                       (x_rs1_source == 2'b01) ? w_rd_wdata :
+                       x_held_operands ? x_held_rs1 : x_rs1_rdata;
+    assign x_rs2_fwd = (x_rs2_source == 2'b10) ? m_fwd_data :
+                       (x_rs2_source == 2'b01) ? w_rd_wdata :
+                       x_held_operands ? x_held_rs2 : x_rs2_rdata;
+
+    execute_stage execute (
+        .i_valid(x_valid),
+        .i_inst(x_inst),
+        .i_pc(x_pc),
+        .i_rs1_rdata(x_rs1_fwd),
+        .i_rs2_rdata(x_rs2_fwd),
+        .i_imm_value(x_imm_value),
+        .i_alu_opsel(x_alu_opsel),
+        .i_alu_sub(x_alu_sub),
+        .i_alu_unsigned(x_alu_unsigned),
+        .i_alu_arith(x_alu_arith),
+        .i_op1_sel(x_op1_sel),
+        .i_op2_sel(x_op2_sel),
+        .i_is_branch(x_is_branch),
+        .i_is_jal(x_is_jal),
+        .i_is_jalr(x_is_jalr),
+        .i_illegal_inst(x_illegal_inst),
+        .i_mem_ren(x_mem_ren),
+        .i_mem_wen(x_mem_wen),
+        .o_alu_result(x_alu_result),
+        .o_pc_plus4(x_pc_plus4),
+        .o_next_pc(x_next_pc),
+        .o_trap(x_trap),
+        .o_halt(x_halt),
+        .o_stop(x_stop_request),
+        .o_redirect(x_redirect_request)
+    );
+
+    // Save Execute outputs for Memory.
+    xm_register xm (
+        .i_clk(i_clk),
+        .i_rst(i_rst),
+        .i_flush(1'b0),
+        .i_stall(stall_memory),
+        .i_valid(x_valid),
+        .i_inst(x_inst),
+        .i_pc(x_pc),
+        .i_next_pc(x_next_pc),
+        .i_rs1_raddr(x_rs1_raddr),
+        .i_rs2_raddr(x_rs2_raddr),
+        .i_rd_waddr(x_rd_waddr),
+        .i_rs1_rdata(x_rs1_fwd),
+        .i_rs2_rdata(x_rs2_fwd),
+        .i_alu_result(x_alu_result),
+        .i_pc_plus4(x_pc_plus4),
+        .i_mem_ren(x_mem_ren),
+        .i_mem_wen(x_mem_wen),
+        .i_wb_sel(x_wb_sel),
+        .i_reg_wen(x_reg_wen),
+        .i_trap(x_trap),
+        .i_halt(x_halt),
+        .o_valid(m_valid),
+        .o_inst(m_inst),
+        .o_pc(m_pc),
+        .o_next_pc(m_next_pc),
+        .o_rs1_raddr(m_rs1_raddr),
+        .o_rs2_raddr(m_rs2_raddr),
+        .o_rd_waddr(m_rd_waddr),
+        .o_rs1_rdata(m_rs1_rdata),
+        .o_rs2_rdata(m_rs2_rdata),
+        .o_alu_result(m_alu_result),
+        .o_pc_plus4(m_pc_plus4),
+        .o_mem_ren(m_mem_ren),
+        .o_mem_wen(m_mem_wen),
+        .o_wb_sel(m_wb_sel),
+        .o_reg_wen(m_reg_wen),
+        .o_trap(m_trap),
+        .o_halt(m_halt)
+    );
+
+    // Memory.
+
+    memory_stage memory (
+        .i_rst(i_rst),
+        .i_valid(m_valid),
+        .i_inst(m_inst),
+        .i_alu_result(m_alu_result),
+        .i_rs2_rdata(m_rs2_rdata),
+        .i_mem_ren(m_mem_ren),
+        .i_mem_wen(m_mem_wen),
+        .i_trap(m_trap),
+        .i_halt(m_halt),
+        .i_dmem_rdata(i_dmem_rdata),
+        .o_dmem_addr(o_dmem_addr),
+        .o_dmem_ren(m_dmem_ren),
+        .o_dmem_wen(m_dmem_wen),
+        .o_dmem_wdata(o_dmem_wdata),
+        .o_dmem_mask(o_dmem_mask),
+        .o_load_data(m_load_data)
+    );
+
+    // Select and save the result for Writeback.
+    mw_register mw (
+        .i_clk(i_clk),
+        .i_rst(i_rst),
+        .i_flush(1'b0),
+        .i_stall(1'b0),
+        .i_valid(m_valid && !stall_memory),
+        .i_inst(m_inst),
+        .i_pc(m_pc),
+        .i_next_pc(m_next_pc),
+        .i_rs1_raddr(m_rs1_raddr),
+        .i_rs2_raddr(m_rs2_raddr),
+        .i_rd_waddr(m_rd_waddr),
+        .i_rs1_rdata(m_rs1_rdata),
+        .i_rs2_rdata(m_rs2_rdata),
+        .i_alu_result(m_alu_result),
+        .i_mem_data(m_load_data),
+        .i_dmem_addr(o_dmem_addr),
+        .i_dmem_ren(m_dmem_ren),
+        .i_dmem_wen(m_dmem_wen),
+        .i_dmem_mask(o_dmem_mask),
+        .i_dmem_wdata(o_dmem_wdata),
+        .i_dmem_rdata(m_dmem_ren ? i_dmem_rdata : 32'b0),
+        .i_pc_plus4(m_pc_plus4),
+        .i_wb_sel(m_wb_sel),
+        .i_reg_wen(m_reg_wen),
+        .i_trap(m_trap),
+        .i_halt(m_halt),
+        .o_valid(w_valid),
+        .o_inst(w_inst),
+        .o_pc(w_pc),
+        .o_next_pc(w_next_pc),
+        .o_rs1_raddr(w_rs1_raddr),
+        .o_rs2_raddr(w_rs2_raddr),
+        .o_rd_waddr(w_rd_waddr),
+        .o_rs1_rdata(w_rs1_rdata),
+        .o_rs2_rdata(w_rs2_rdata),
+        .o_rd_wdata(w_rd_wdata),
+        .o_dmem_addr(w_dmem_addr),
+        .o_dmem_ren(w_dmem_ren),
+        .o_dmem_wen(w_dmem_wen),
+        .o_dmem_mask(w_dmem_mask),
+        .o_dmem_wdata(w_dmem_wdata),
+        .o_dmem_rdata(w_dmem_rdata),
+        .o_reg_wen(w_reg_wen),
+        .o_trap(w_trap),
+        .o_halt(w_halt)
+    );
+
+    // Writeback.
+
+    writeback_stage writeback (
+        .i_rst(i_rst),
+        .i_valid(w_valid),
+        .i_inst(w_inst),
+        .i_pc(w_pc),
+        .i_next_pc(w_next_pc),
+        .i_rs1_raddr(w_rs1_raddr),
+        .i_rs2_raddr(w_rs2_raddr),
+        .i_rs1_rdata(w_rs1_rdata),
+        .i_rs2_rdata(w_rs2_rdata),
+        .i_rd_waddr(w_rd_waddr),
+        .i_rd_wdata(w_rd_wdata),
+        .i_dmem_addr(w_dmem_addr),
+        .i_dmem_ren(w_dmem_ren),
+        .i_dmem_wen(w_dmem_wen),
+        .i_dmem_mask(w_dmem_mask),
+        .i_dmem_wdata(w_dmem_wdata),
+        .i_dmem_rdata(w_dmem_rdata),
+        .i_reg_wen(w_reg_wen),
+        .i_trap(w_trap),
+        .i_halt(w_halt),
+        .o_rf_wen(wb_reg_wen),
+        .o_rf_waddr(wb_rd_waddr),
+        .o_rf_wdata(wb_rd_wdata),
+        .o_retire_valid(o_retire_valid),
+        .o_retire_inst(o_retire_inst),
+        .o_retire_trap(o_retire_trap),
+        .o_retire_halt(o_retire_halt),
+        .o_retire_rs1_raddr(o_retire_rs1_raddr),
+        .o_retire_rs2_raddr(o_retire_rs2_raddr),
+        .o_retire_rs1_rdata(o_retire_rs1_rdata),
+        .o_retire_rs2_rdata(o_retire_rs2_rdata),
+        .o_retire_rd_waddr(o_retire_rd_waddr),
+        .o_retire_rd_wdata(o_retire_rd_wdata),
+        .o_retire_pc(o_retire_pc),
+        .o_retire_next_pc(o_retire_next_pc),
+        .o_retire_dmem_addr(o_retire_dmem_addr),
+        .o_retire_dmem_ren(o_retire_dmem_ren),
+        .o_retire_dmem_wen(o_retire_dmem_wen),
+        .o_retire_dmem_mask(o_retire_dmem_mask),
+        .o_retire_dmem_wdata(o_retire_dmem_wdata),
+        .o_retire_dmem_rdata(o_retire_dmem_rdata)
+    );
+
 endmodule
 
 `default_nettype wire
